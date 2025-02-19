@@ -1,5 +1,6 @@
 ﻿using Hangfire;
 using Hangfire.MemoryStorage;
+using HangfireWithNet9.Services;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,9 +17,14 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// 🔹 Hangfire Konfigürasyonu (MemoryStorage)
+#region Hangfire Konfigürasyonu (MemoryStorage)
 builder.Services.AddHangfire(config => config.UseMemoryStorage());
 builder.Services.AddHangfireServer();
+builder.Services.AddHttpClient(); // HTTP istekleri için HttpClient ekle
+builder.Services.AddScoped<ExchangeRateService>(); // **ExchangeRateService** servisini DI konteynerine ekliyoruz.
+#endregion
+
+
 
 var app = builder.Build();
 
@@ -31,19 +37,24 @@ if (app.Environment.IsDevelopment())
         c.RoutePrefix = string.Empty; // Swagger'ı ana dizine yerleştirir
     });
 }
+else
+{
+    // Configure the HTTP request pipeline.
+    app.UseExceptionHandler("/Home/Error");
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseHsts();
+}
 
-// 🔹 Hangfire Dashboard Aktif Edildi
-app.UseHangfireDashboard();
+#region Hangfire Dashboard
 app.UseHangfireDashboard("/hangfire");
-
-// 🔹 Örnek bir Hangfire Görevi (Her 10 saniyede bir çalışır)
-RecurringJob.AddOrUpdate("my-recurring-job",
-    () => Console.WriteLine($"[{DateTime.Now}] Hangfire Görevi Çalıştı!"),
-    Cron.MinuteInterval(1) // 1 dakikada bir çalışır
-);
+#endregion
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
+
+// Hangfire ile periyodik olarak servis çağır
+RecurringJob.AddOrUpdate<ExchangeRateService>("fetch-exchange-rates",
+                                 service => service.FetchAndUpdateRates(), Cron.MinuteInterval(2));
 
 app.Run();
